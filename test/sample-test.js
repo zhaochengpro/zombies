@@ -1,3 +1,4 @@
+const { zeroPad } = require("@ethersproject/bytes");
 const { expect } = require("chai");
 const { utils } = require("ethers");
 const { ethers } = require("hardhat");
@@ -40,6 +41,26 @@ describe("Zombies", function () {
     zombie.deployed()
     await zombieLogic.setZombieToken(zombie.address);
     // await zombieLogic.purchaseCard(2);
-    await zombieLogic.purchaseCard(1);
+    // await zombieLogic.purchaseCard(1);
+  })
+  it("all function", async () => {
+    const Zombie = await ethers.getContractFactory("ZombieToken");
+    // console.log(Zombie)
+    const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
+    const ContainerManager = await ethers.getContractFactory("ContainerManager");
+    const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
+    const zombieLogic = await ZombieLogic.deploy();
+    zombieLogic.deployed();
+    const zombie = await Zombie.deploy(zombieLogic.address);
+    zombie.deployed()
+    await zombieLogic.setZombieToken(zombie.address);
+    const zombieBeacon = await ZombieBeacon.deploy(zombieLogic.address);
+    zombieBeacon.deployed();
+    const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
+    containerManager.deployed();
+    const wildernessAddr  = await containerManager.getWilderness();
+    const Wilderness = await ethers.getContractFactory("Wilderness")
+    const wilderness = new ethers.Contract(wildernessAddr, Wilderness.interface.fragments);
+    wilderness.purchaseCard()
   })
 });
