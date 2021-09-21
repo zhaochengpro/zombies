@@ -21,7 +21,7 @@ contract ZombieLogic is Ownable {
     uint256 private _preSaleEndTime;
 
     uint256 public constant _MAX_SUPPLY = 9180;
-    uint256 public  presaleAmount = 820;
+    uint256 public presaleAmount = 820;
 
     uint256 private constant _ZOMBIEPRICE = 0.1 ether;
     uint256 private constant _CARDPRICE = 0.01 ether;
@@ -59,7 +59,7 @@ contract ZombieLogic is Ownable {
         payable
         hasZombieToken
     {
-        require(!_isPreSaleEnded(), "pre-sale is ended");
+        require(!isPreSaleEnded(), "pre-sale is ended");
         require(msg.value >= _ZOMBIEPRICE * zombeNumber);
 
         _mintGeneralZombies(zombeNumber);
@@ -75,9 +75,9 @@ contract ZombieLogic is Ownable {
             cardNumber == 1 || cardNumber == 3 || cardNumber == 5,
             "the card number of purchase must be 1 or 3 or 5"
         );
-        require(_isPreSaleEnded(), "pre-sale is not ended");
+        require(isPreSaleEnded(), "pre-sale is not ended");
         require(
-            _zombieToken.currentSupply() + cardNumber < _MAX_SUPPLY, 
+            _zombieToken.currentSupply() + cardNumber < _MAX_SUPPLY,
             "the remainder of zombie not enough"
         );
         require(msg.value >= _CARDPRICE * cardNumber, "value not enough");
@@ -100,18 +100,15 @@ contract ZombieLogic is Ownable {
         return _zombieToken.getZombieGradeByTokenId(tokenId);
     }
 
-    function _isPreSaleEnded() private view returns (bool) {
-        return
-            block.timestamp >= _preSaleEndTime ||
-            presaleAmount == 0;
+    function isPreSaleEnded() public view returns (bool) {
+        return block.timestamp >= _preSaleEndTime || presaleAmount == 0;
     }
 
     /**
-        @notice mint general zombie (including mint pre-sale zombie)
+        @notice mint general zombie (including pre-sale zombie)
      */
     function _mintGeneralZombies(uint256 zombieNumber_) private hasZombieToken {
-        
-        if (!_isPreSaleEnded()) {
+        if (!isPreSaleEnded()) {
             // Randomly mint zombie A, B, C
             _mintGeneralZombiesByGrade(
                 zombieNumber_,
