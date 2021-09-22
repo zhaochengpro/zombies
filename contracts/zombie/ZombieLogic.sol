@@ -2,6 +2,7 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../proxy/ContainerProxyFactory.sol";
+import "hardhat/console.sol";
 
 interface IERC721 {
     function mint(address to, uint8 level) external;
@@ -22,12 +23,18 @@ contract ZombieLogic is Ownable {
     bool private _isRevealed;
     uint256 private _preSaleStartTime;
     uint256 private _preSaleEndTime;
+    bool private _isEnded;
 
-    uint256 public constant _MAX_SUPPLY = 9180;
+    uint256 public constant _MAX_SUPPLY = 1000;
+    uint256 public constant _GENERAL_ZOMBIE = 9180;
+    uint256 public currentSupply = 0;
     uint256 public presaleAmount = 820;
 
     uint256 private constant _ZOMBIEPRICE = 0.1 ether;
     uint256 private constant _CARDPRICE = 0.01 ether;
+
+    ContainerManager public _containerManager;
+
     enum ZombieGrade {
         ELEVEL,
         DLEVEL,
@@ -50,8 +57,27 @@ contract ZombieLogic is Ownable {
         _;
     }
 
+    function getContainerManager() public view returns (address) {
+        return address(_containerManager);
+    }
+
     function setZombieToken(address zombieToken_) public onlyOwner {
         _zombieToken = IERC721(zombieToken_);
+    }
+
+    function setContainerManager(address containerManager_) public onlyOwner {
+        _containerManager = ContainerManager(containerManager_);
+    }
+
+    function setPresaleEnded(bool isEnded) public onlyOwner {
+        if (isEnded) {
+            require(
+                address(_containerManager) != address(0x0),
+                "please set _containerManager"
+            );
+        }
+        _isEnded = isEnded;
+        _notifyPresaleEnded();
     }
 
     /**
@@ -65,7 +91,7 @@ contract ZombieLogic is Ownable {
         require(!isPreSaleEnded(), "pre-sale is ended");
         require(msg.value >= _ZOMBIEPRICE * zombeNumber);
 
-        _mintGeneralZombies(zombeNumber, ContainerProxy(payable(address(0x0))));
+        _mintGeneralZombies(zombeNumber, address(0x0));
     }
 
     /**
@@ -73,40 +99,27 @@ contract ZombieLogic is Ownable {
         @dev The number of card must be 1 or 3 or 5
         pre-sale must be not ended yet
      */
-    // function purchaseCard(uint8 cardNumber) public payable hasZombieToken {
-    //     require(
-    //         cardNumber == 1 || cardNumber == 3 || cardNumber == 5,
-    //         "the card number of purchase must be 1 or 3 or 5"
-    //     );
-    //     require(isPreSaleEnded(), "pre-sale is not ended");
-    //     require(
-    //         _zombieToken.currentSupply() + cardNumber < _MAX_SUPPLY,
-    //         "the remainder of zombie not enough"
-    //     );
-    //     require(msg.value >= _CARDPRICE * cardNumber, "value not enough");
 
-    //     _mintGeneralZombies(cardNumber);
-    // }
-
-    function purchaseCard(uint8 cardNumber, address container_)
+    function purchaseCard(uint8 cardNumber)
         public
         payable
         hasZombieToken
     {
+        console.log("pur", getContainerManager());
         require(
             cardNumber == 1 || cardNumber == 3 || cardNumber == 5,
             "the card number of purchase must be 1 or 3 or 5"
         );
         require(isPreSaleEnded(), "pre-sale is not ended");
+        
         require(
-            _zombieToken.currentSupply() + cardNumber < _MAX_SUPPLY,
+            currentSupply + cardNumber < _GENERAL_ZOMBIE,
             "the remainder of zombie not enough"
         );
+
         require(msg.value >= _CARDPRICE * cardNumber, "value not enough");
 
-        ContainerProxy container = ContainerProxy(payable(container_));
-        require(container.isActive(), "container is closed");
-        _mintGeneralZombies(cardNumber, container);
+        // _mintGeneralZombies(cardNumber);
     }
 
     // @undo Should _msgSender() replace with winer
@@ -125,16 +138,19 @@ contract ZombieLogic is Ownable {
     }
 
     function isPreSaleEnded() public view returns (bool) {
-        return block.timestamp >= _preSaleEndTime || presaleAmount == 0;
+        return
+            block.timestamp >= _preSaleEndTime ||
+            presaleAmount == 0 ||
+            _isEnded;
     }
 
     /**
         @notice mint general zombie (including pre-sale zombie)
      */
-    function _mintGeneralZombies(
-        uint256 zombieNumber_,
-        ContainerProxy container
-    ) private hasZombieToken {
+    function _mintGeneralZombies(uint256 zombieNumber_, address container)
+        private
+        hasZombieToken
+    {
         if (!isPreSaleEnded()) {
             // Randomly mint zombie A, B, C
             _mintGeneralZombiesByGrade(
@@ -158,13 +174,19 @@ contract ZombieLogic is Ownable {
     function _mintGeneralZombiesByGrade(
         uint256 zombieNumber_,
         uint8 level_,
-        ContainerProxy container_
+        address container_
     ) private {
         uint256 loopAmount;
         for (uint256 i = 0; i < zombieNumber_; i++) {
             uint8 randomLevel = uint8(
                 uint256(
-                    keccak256(abi.encodePacked(block.timestamp, msg.sender, loopAmount))
+                    keccak256(
+                        abi.encodePacked(
+                            block.timestamp,
+                            msg.sender,
+                            loopAmount
+                        )
+                    )
                 ) % level_
             );
             
@@ -177,18 +199,29 @@ contract ZombieLogic is Ownable {
             }
             
             // by the rest amount of grade to mint zombie
-            if (address(container_) != address(0x0)) {
-                ContainerProxy container = ContainerProxy(payable(container_));
-                uint256 gradeAmount = container.getEachGradeAmount(randomLevel);
+            if (container_ != address(0x0)) {
+                uint256 gradeAmount = _containerManager.getEachGradeAmount(
+                    container_,
+                    randomLevel
+                );
+
                 if (gradeAmount == 0) {
                     i--;
                     loopAmount++;
                     continue;
                 }
+                
+                _containerManager.decrementGradeAmount(container_, randomLevel);
+                
+                currentSupply++;
+                
             }
-
             _zombieToken.mint(_msgSender(), randomLevel);
             loopAmount++;
         }
+    }
+
+    function _notifyPresaleEnded() private {
+        _containerManager.receivePresaleEnded(address(this));
     }
 }

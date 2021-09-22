@@ -34,12 +34,9 @@ contract FrameCounterFactory is Ownable {
         public
         onlyOwner
         onlyCounterNotExist(boardAddr)
-        returns (address)
     {
         FrameCounterContract counter =  new FrameCounterContract(boardAddr, maxVal);
         _counters[boardAddr] = counter;
-        
-        return address(counter);
     }
     
     function increment(address boardAddr)

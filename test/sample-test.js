@@ -22,7 +22,7 @@ describe("Zombies", function () {
     const zombie = await Zombie.deploy(zombieLogic.address);
     zombie.deployed()
     await zombieLogic.setZombieToken(zombie.address);
-    await zombieLogic.purchasePreSaleZombie(20, {value:utils.parseEther('2')})
+    await zombieLogic.purchasePreSaleZombie(20, { value: utils.parseEther('2') })
     const grade0 = await zombieLogic.getZombieGrade(0);
     const grade1 = await zombieLogic.getZombieGrade(2);
     const grade2 = await zombieLogic.getZombieGrade(3);
@@ -40,15 +40,38 @@ describe("Zombies", function () {
     const zombie = await Zombie.deploy(zombieLogic.address);
     zombie.deployed()
     await zombieLogic.setZombieToken(zombie.address);
-    // await zombieLogic.purchaseCard(2);
-    // await zombieLogic.purchaseCard(1);
+    await zombieLogic.purchasePreSaleZombie(2, { value: utils.parseEther('1') });
+    const presaleAmount = await zombieLogic.presaleAmount();
+    console.log(presaleAmount.toString(10));
   })
-  it("all function", async () => {
+  it("Test begain to create container when pre-sale is ended", async () => {
+    //   const Zombie = await ethers.getContractFactory("ZombieToken");
+    //   // console.log(Zombie)
+    //   const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
+    //   const ContainerManager = await ethers.getContractFactory("ContainerManager");
+    //   const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
+    //   const zombieLogic = await ZombieLogic.deploy();
+    //   zombieLogic.deployed();
+    //   const zombie = await Zombie.deploy(zombieLogic.address);
+    //   zombie.deployed()
+    //   await zombieLogic.setZombieToken(zombie.address);
+    //   const zombieBeacon = await ZombieBeacon.deploy(zombieLogic.address);
+    //   zombieBeacon.deployed();
+    //   const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
+    //   containerManager.deployed();
+    //   await zombieLogic.setContainerManager(containerManager.address);
+    //   await zombieLogic.setPresaleEnded(true);
+    //   const containers = await containerManager.getActiveContainers();
+    //   console.log(containers);
+  })
+  it("Test purchase card by one container", async () => {
+    const [owner, account] = await ethers.getSigners();
     const Zombie = await ethers.getContractFactory("ZombieToken");
     // console.log(Zombie)
     const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
     const ContainerManager = await ethers.getContractFactory("ContainerManager");
     const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
+    const Container = await ethers.getContractFactory("ContainerProxy");
     const zombieLogic = await ZombieLogic.deploy();
     zombieLogic.deployed();
     const zombie = await Zombie.deploy(zombieLogic.address);
@@ -58,9 +81,19 @@ describe("Zombies", function () {
     zombieBeacon.deployed();
     const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
     containerManager.deployed();
-    const wildernessAddr  = await containerManager.getWilderness();
-    const Wilderness = await ethers.getContractFactory("Wilderness")
-    const wilderness = new ethers.Contract(wildernessAddr, Wilderness.interface.fragments);
-    wilderness.purchaseCard()
+    await zombieLogic.setContainerManager(containerManager.address);
+    await zombieLogic.setPresaleEnded(true);
+    const containers = await containerManager.getActiveContainers();
+    // console.log(containers);
+    console.log("account",await zombieLogic.getContainerManager())
+    console.log("account1",zombie.address);
+    await containerManager.connect(account).beforePurchaseCard(5, containers[0], { value: utils.parseEther("10")});
+    
+    // const aAmount = await container01.connect(account).getEachGradeAmount(0);
+    // const aAmount1 = await container01.connect(account).getEachGradeAmount(1);
+    // const aAmount2 = await container01.connect(account).getEachGradeAmount(2);
+    // const aAmount3 = await container01.connect(account).getEachGradeAmount(3);
+    // const aAmount4 = await container01.connect(account).getEachGradeAmount(4);
+    // console.log(aAmount.toString(10),aAmount1.toString(10),aAmount2.toString(10),aAmount3.toString(10),aAmount4.toString(10));
   })
 });

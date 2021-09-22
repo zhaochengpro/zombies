@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/proxy/Proxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/IBeacon.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/StorageSlot.sol";
+import "hardhat/console.sol";
 
 abstract contract MinimalBeaconProxy is Proxy {
 

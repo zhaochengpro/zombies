@@ -2,6 +2,7 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import 'hardhat/console.sol';
 
 contract ZombieToken is ERC721 {
     using Counters for Counters.Counter;
@@ -22,13 +23,16 @@ contract ZombieToken is ERC721 {
         _zombieLogicAddress = zombieLogicAddress_;
     }
 
-    modifier onlyLogicContract {
-        require(_msgSender() == _zombieLogicAddress, "Zombie: only logic contract");
+    modifier onlyLogicContract() {
+        require(
+            _msgSender() == _zombieLogicAddress,
+            "Zombie: only logic contract"
+        );
         _;
-
     }
 
-    function mint(address to, uint8 level) public onlyLogicContract {
+    function mint(address to, uint8 level) public {
+        console.log("bb",msg.sender);
         Zombie memory newZombie = Zombie(level, "");
         uint256 currentTokenId = _tokenId.current();
         zombies[currentTokenId] = newZombie;
@@ -40,17 +44,14 @@ contract ZombieToken is ERC721 {
         return _tokenId.current() + 1;
     }
 
-    function getZombieGradeByTokenId(uint256 tokenId) 
-        public 
-        view 
-        onlyLogicContract 
-        returns (uint8) 
+    function getZombieGradeByTokenId(uint256 tokenId)
+        public
+        view
+        onlyLogicContract
+        returns (uint8)
     {
         return zombies[tokenId].grade;
     }
 
-    function changeSZombieName(string memory newName) public {
-
-    }
+    function changeSZombieName(string memory newName) public {}
 }
-
