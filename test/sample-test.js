@@ -1,5 +1,3 @@
-const { AbiCoder } = require("@ethersproject/abi");
-const { zeroPad } = require("@ethersproject/bytes");
 const { expect } = require("chai");
 const { utils } = require("ethers");
 const { ethers } = require("hardhat");
@@ -87,7 +85,7 @@ describe("Zombies", function () {
     const containers = await containerManager.getActiveContainers();
 
     const container01 = new ethers.Contract(containers[0], Container.interface.fragments, owner);
-    await containerManager.connect(account).beforePurchaseCard(5, container01.address, {value : utils.parseEther("1")})
+    await containerManager.connect(account).beforePurchaseCard(5, container01.address, { value: utils.parseEther("1") })
     const zombieAmount = await container01.zombieAmount();
     expect(zombieAmount.toString(10)).equal("62");
     const tokenBalance = await zombie.balanceOf(account.address);
@@ -96,7 +94,6 @@ describe("Zombies", function () {
   it("Test new container", async () => {
     const [owner, account] = await ethers.getSigners();
     const Zombie = await ethers.getContractFactory("ZombieToken");
-    // console.log(Zombie)
     const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
     const ContainerManager = await ethers.getContractFactory("ContainerManager");
     const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
@@ -111,22 +108,125 @@ describe("Zombies", function () {
     const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
     containerManager.deployed();
     await zombieLogic.setContainerManager(containerManager.address);
+
+
     await zombieLogic.setPresaleEnded(true);
     const containers = await containerManager.getActiveContainers();
-    console.log(containers);
 
     const container01 = new ethers.Contract(containers[0], Container.interface.fragments, owner);
-    for (let i = 0; i < 12; i ++) {
-      await containerManager.connect(account).beforePurchaseCard(5, container01.address, {value : utils.parseEther("1")})
+    for (let i = 0; i < 12; i++) {
+      await containerManager.connect(account).beforePurchaseCard(5, container01.address, { value: utils.parseEther("1") })
     }
-    await containerManager.connect(account).beforePurchaseCard(3, container01.address, {value : utils.parseEther("1")})
-    await containerManager.connect(account).beforePurchaseCard(1, container01.address, {value : utils.parseEther("1")})
-    await containerManager.connect(account).beforePurchaseCard(3, container01.address, {value : utils.parseEther("1")})
     const zombieAmount = await container01.zombieAmount();
-    expect(zombieAmount.toString(10)).equal("3");
+    expect(zombieAmount.toString(10)).equal("7");
     const tokenBalance = await zombie.balanceOf(account.address);
-    expect(tokenBalance.toString(10)).equal('64');
-    const newContainers = await containerManager.getActiveContainers();
-    console.log(newContainers);
+    expect(tokenBalance.toString(10)).equal("60");
   })
+  it("Test to new container when the amount of zombie euqal zero", async () => {
+    const [owner, account] = await ethers.getSigners();
+    const Zombie = await ethers.getContractFactory("ZombieToken");
+    const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
+    const ContainerManager = await ethers.getContractFactory("ContainerManager");
+    const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
+    const Container = await ethers.getContractFactory("ContainerProxy");
+    const zombieLogic = await ZombieLogic.deploy();
+    zombieLogic.deployed();
+    const zombie = await Zombie.deploy(zombieLogic.address);
+    zombie.deployed()
+    await zombieLogic.setZombieToken(zombie.address);
+    const zombieBeacon = await ZombieBeacon.deploy(zombieLogic.address);
+    zombieBeacon.deployed();
+    const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
+    containerManager.deployed();
+    await zombieLogic.setContainerManager(containerManager.address);
+
+
+    await zombieLogic.setPresaleEnded(true);
+    const containers = await containerManager.getActiveContainers();
+    const container01 = new ethers.Contract(containers[0], Container.interface.fragments, owner);
+    for (let i = 0; i < 12; i++) {
+      await containerManager.connect(account).beforePurchaseCard(5, container01.address, { value: utils.parseEther("1") })
+    }
+    await containerManager.connect(account).beforePurchaseCard(3, container01.address, { value: utils.parseEther("1") })
+    await containerManager.connect(account).beforePurchaseCard(1, container01.address, { value: utils.parseEther("1") })
+    await containerManager.connect(account).beforePurchaseCard(3, container01.address, { value: utils.parseEther("1") })
+    const zombieAmount = await container01.zombieAmount();
+    expect(zombieAmount.toString(10)).equal("0");
+    const tokenBalance = await zombie.balanceOf(account.address);
+    expect(tokenBalance.toString(10)).equal("67");
+    const newContainers = await containerManager.getActiveContainers();
+    expect(newContainers[0]).equal("0x0000000000000000000000000000000000000000");
+    expect(newContainers.length).equal(11);
+  })
+  it("Test to new container when the amount of zombie equal less than 7", async () => {
+    const [owner, account] = await ethers.getSigners();
+    const Zombie = await ethers.getContractFactory("ZombieToken");
+    const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
+    const ContainerManager = await ethers.getContractFactory("ContainerManager");
+    const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
+    const Container = await ethers.getContractFactory("ContainerProxy");
+    const zombieLogic = await ZombieLogic.deploy();
+    zombieLogic.deployed();
+    const zombie = await Zombie.deploy(zombieLogic.address);
+    zombie.deployed()
+    await zombieLogic.setZombieToken(zombie.address);
+    const zombieBeacon = await ZombieBeacon.deploy(zombieLogic.address);
+    zombieBeacon.deployed();
+    const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
+    containerManager.deployed();
+    await zombieLogic.setContainerManager(containerManager.address);
+
+
+    await zombieLogic.setPresaleEnded(true);
+    const containers = await containerManager.getActiveContainers();
+    const container01 = new ethers.Contract(containers[0], Container.interface.fragments, owner);
+    for (let i = 0; i < 12; i++) {
+      await containerManager.connect(account).beforePurchaseCard(5, container01.address, { value: utils.parseEther("1") })
+    }
+    await containerManager.connect(account).beforePurchaseCard(3, container01.address, { value: utils.parseEther("1") })
+    const zombieAmount = await container01.zombieAmount();
+    expect(zombieAmount.toString(10)).equal("4");
+    const tokenBalance = await zombie.balanceOf(account.address);
+    expect(tokenBalance.toString(10)).equal("63");
+    const newContainers = await containerManager.getActiveContainers();
+    expect(newContainers.length).equal(11);
+  })
+  it("Test to new container when the amount of zombie greater then the rest of zombie amount ",
+    async () => {
+      const [owner, account] = await ethers.getSigners();
+      const Zombie = await ethers.getContractFactory("ZombieToken");
+      const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
+      const ContainerManager = await ethers.getContractFactory("ContainerManager");
+      const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
+      const Container = await ethers.getContractFactory("ContainerProxy");
+      const zombieLogic = await ZombieLogic.deploy();
+      zombieLogic.deployed();
+      const zombie = await Zombie.deploy(zombieLogic.address);
+      zombie.deployed()
+      await zombieLogic.setZombieToken(zombie.address);
+      const zombieBeacon = await ZombieBeacon.deploy(zombieLogic.address);
+      zombieBeacon.deployed();
+      const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
+      containerManager.deployed();
+      await zombieLogic.setContainerManager(containerManager.address);
+
+
+      await zombieLogic.setPresaleEnded(true);
+      const containers = await containerManager.getActiveContainers();
+      console.log(containers);
+      const container01 = new ethers.Contract(containers[0], Container.interface.fragments, owner);
+      for (let i = 0; i < 12; i++) {
+        await containerManager.connect(account).beforePurchaseCard(5, container01.address, { value: utils.parseEther("1") })
+      }
+      console.log("test",containerManager.address, account.address);
+      await containerManager.connect(account).beforePurchaseCard(3, container01.address, { value: utils.parseEther("1") })
+      await containerManager.connect(account).beforePurchaseCard(1, container01.address, { value: utils.parseEther("1") })
+      await containerManager.connect(account).beforePurchaseCard(5, container01.address, { value: utils.parseEther("1") })
+      const zombieAmount = await container01.zombieAmount();
+      expect(zombieAmount.toString(10)).equal("0");
+      const tokenBalance = await zombie.balanceOf(account.address);
+      expect(tokenBalance.toString(10)).equal("69");
+      const newContainers = await containerManager.getActiveContainers();
+      
+    })
 });

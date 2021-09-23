@@ -105,10 +105,6 @@ contract ZombieLogic is Ownable {
         payable
         hasZombieToken
     {
-        require(
-            cardNumber == 1 || cardNumber == 3 || cardNumber == 5,
-            "the card number of purchase must be 1 or 3 or 5"
-        );
         require(isPreSaleEnded(), "pre-sale is not ended");
 
         require(

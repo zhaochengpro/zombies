@@ -36,7 +36,7 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
 
     ContainerManager private _containerManager;
 
-    bool private isNewContainer;
+    address private _nextNewContainer;
 
     // mapping(uint8 => uint256) private _eachGradeAmount;
 
@@ -66,23 +66,15 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
         zombieAmount--;
     }
 
-    function containerManager()
-        internal
-        view
-        virtual
-        returns (ContainerManager)
-    {
-        return _containerManager;
-    }
-
     function notifyCreateNewContainer() internal virtual returns (address) {
-        ContainerManager manager = containerManager();
-        return manager.receiveCreateNewContainerNotification(address(this));
+        return
+            _containerManager.receiveCreateNewContainerNotification(
+                address(this)
+            );
     }
 
     function notifyToCloseContainer() internal virtual {
-        ContainerManager manager = containerManager();
-        manager.receiveCloseContainerNotification(address(this));
+        _containerManager.receiveCloseContainerNotification(address(this));
     }
 
     function beforePurchaseFunc(string memory funcStr)
@@ -103,10 +95,6 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
             }
         }
     }
-    
-    // function _fallback() internal override {
-    //     _delegate(_implementation())
-    // }
 
     function _delegate(address implementation) internal override {
         _delegatePurchaseCard(implementation);
@@ -116,31 +104,54 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
         (uint8 number, address buyer) = beforePurchaseFunc(
             "purchaseCard(uint8,address)"
         );
-
+        // console.log(number, buyer);
+        // Calaulate the excess amount of the last purchase in this container
         int256 spreadAmount = int256(zombieAmount) - int8(number);
+
         if (spreadAmount == 0) {
+            // notify container manager to create a new container and close this container
             _callPurchaseCard(implementation, number, buyer);
             notifyToCloseContainer();
-            console.log(0);
         } else if (spreadAmount < 0) {
-            console.log(1);
+            // Notify container manager to create a new container
+            // At the same time, to purchase the spread amount of token in new container
             _callPurchaseCard(implementation, uint8(zombieAmount), buyer);
-            notifyToCloseContainer();
-            if (number - zombieAmount > 0) {
-                address newContainer = notifyCreateNewContainer();
-                _handleSpreadAmount(newContainer, spreadAmount);
+
+            if (_nextNewContainer == address(0x0)) {
+                _nextNewContainer = notifyCreateNewContainer();
             }
-        } else if (spreadAmount <= 7 && spreadAmount > 0 && !isNewContainer) {
-            notifyCreateNewContainer();
-            isNewContainer = true;
+
+            
+            (bool success, ) = address(_containerManager).call{value: 200000000000000000}(
+                abi.encodeWithSignature(
+                    "purchaseCardOnlyContainer(uint8,address,address)",
+                    uint8(number - zombieAmount),
+                    _nextNewContainer,
+                    buyer
+                )
+            );
+            require(success, "purchaseCardOnlyContainer failed");
+            // After purchase new card, to close last container
+            notifyToCloseContainer();
+        } else if (
+            spreadAmount <= 7 &&
+            spreadAmount > 0 &&
+            _nextNewContainer == address(0x0)
+        ) {
+            // Notify container mananger to create a new container,
+            // if the rest of zombie amount is less than 7
+            _nextNewContainer = notifyCreateNewContainer();
             _callPurchaseCard(implementation, number, buyer);
         } else {
-            console.log(2);
-             _callPurchaseCard(implementation, number, buyer);
+            _callPurchaseCard(implementation, number, buyer);
         }
     }
 
-    function _callPurchaseCard(address implementation_, uint8 number_, address buyer_) internal {
+    function _callPurchaseCard(
+        address implementation_,
+        uint8 number_,
+        address buyer_
+    ) internal {
         (bool success, ) = implementation_.call{value: msg.value}(
             abi.encodeWithSignature(
                 "purchaseCard(uint8,address)",
@@ -149,15 +160,6 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
             )
         );
         require(success, "_delegate failed");
-    }
-
-    function _handleSpreadAmount(address newContainer, int256 spread_) private {
-        ContainerManager manager = containerManager();
-        uint8 number = 0;
-        for (int256 i = spread_; i < 0; i++) {
-            number++;
-        }
-        manager.beforePurchaseCard(number, newContainer);
     }
 
     // function _initEachGradeAmountMapping() private {
@@ -180,40 +182,32 @@ contract ContainerManager is Ownable {
 
     // Mapping from container address to isActive
     mapping(address => bool) private _isActive;
+    address[] public activeContainers;
+    mapping(address => uint256) activeContainersIndex;
 
     constructor(address zombieLogic_, address beacon) {
         _containerFactory = new ContainerProxyFactory(beacon);
         _counterFactory = new FrameCounterFactory();
         _zombieLogic = ZombieLogic(zombieLogic_);
-        _containers = new ContainerProxy[](135);
     }
 
     function isActive(address container) public view returns (bool) {
         return _isActive[container];
     }
 
-    function beforePurchaseCard(uint8 number, address containerId)
+    function beforePurchaseCard(uint8 number, address container)
         public
         payable
     {
-        address containerAddr = containerId;
-        require(containerAddr != address(0x0));
+        _handleBeforePurchaseCard(number, container, _msgSender());
+    }
 
-        if (!_isValidContainer(containerId)) {
-            revert("container is invalid");
-        }
-
-        _incrementContainerCounter(containerId, number);
-        // console.log(_msgSender());
-
-        (bool success, ) = containerAddr.call{value: msg.value}(
-            abi.encodePacked(
-                "purchaseCard(uint8,address)",
-                number,
-                _msgSender()
-            )
-        );
-        require(success, "purchase card not success");
+    function purchaseCardOnlyContainer(
+        uint8 number,
+        address container,
+        address lastBuyer
+    ) public payable {
+        _handleBeforePurchaseCard(number, container, lastBuyer);
     }
 
     // function getEachGradeAmount(address container, uint8 grade)
@@ -233,22 +227,6 @@ contract ContainerManager is Ownable {
         returns (address[] memory)
     {
         require(_zombieLogic.isPreSaleEnded(), "pre-sale is not ended");
-        uint256 len = _containers.length;
-        address[] memory activeContainers = new address[](10);
-        uint256 activeIndex = 0;
-
-        for (uint256 i = 0; i < len; i++) {
-            address container = address(_containers[i]);
-            if (isActive(container)) {
-                if (activeIndex < 10) {
-                    activeContainers[activeIndex] = container;
-                    activeIndex++;
-                } else {
-                    break;
-                }
-            }
-        }
-
         return activeContainers;
     }
 
@@ -264,13 +242,8 @@ contract ContainerManager is Ownable {
     // Receive the notification that create close a container from every container;
     function receiveCloseContainerNotification(address container) public {
         require(isActive(container), "Container was closed");
-
         _isActive[container] = false;
-        (bool success, ) = container.call(
-            abi.encodeWithSignature("setActive(bool)", false)
-        );
-
-        require(success);
+        delete activeContainers[activeContainersIndex[container]];
     }
 
     function receivePresaleEnded(address zombieLogic) public {
@@ -285,11 +258,13 @@ contract ContainerManager is Ownable {
         require(_zombieLogic.isPreSaleEnded(), "pre-sale is not ended");
 
         address container = _containerFactory.createContainer();
-        _containers.push(ContainerProxy(payable(container)));
+        ContainerProxy containerProxy = ContainerProxy(payable(container));
+        _containers.push(containerProxy);
         _counterFactory.createCounter(container, 67);
-        containerMap[_containers.length] = ContainerProxy(payable(container));
+        containerMap[_containers.length] = containerProxy;
         _isActive[container] = true;
-
+        activeContainersIndex[container] = activeContainers.length;
+        activeContainers.push(container);
         return container;
     }
 
@@ -307,5 +282,33 @@ contract ContainerManager is Ownable {
             _counterFactory.increment(containerId);
             container.decrementGradeAmount();
         }
+    }
+
+    function _handleBeforePurchaseCard(
+        uint8 number,
+        address container,
+        address buyer
+    ) private {
+        if (!_isValidContainer(container)) {
+            revert("container is invalid");
+        }
+        console.log(address(this), container, isActive(address(this)));
+        // if the sender is the owner, this requirement is not required
+        require(
+            isActive(_msgSender()) ||
+                number == 1 ||
+                number == 3 ||
+                number == 5,
+            "The card number of purchase must be 1 or 3 or 5"
+        );
+
+        require(container != address(0x0));
+        (bool success, ) = container.call{value: msg.value}(
+            abi.encodePacked("purchaseCard(uint8,address)", number, buyer)
+        );
+
+        require(success, "purchase card not success");
+
+        _incrementContainerCounter(container, number);
     }
 }
