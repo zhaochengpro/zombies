@@ -5,13 +5,18 @@ import "./MinimalBeaconProxy.sol";
 import "../zombie/ZombieLogic.sol";
 import "../utils/FrameCounterFactory.sol";
 
-contract ContainerProxyFactory is Ownable {
-    FrameCounterFactory private _counterFactory;
+function bytesToUint(bytes memory b) pure returns (uint256) {
+    uint256 number;
+    for (uint256 i = 0; i < b.length; i++) {
+        number = number + uint8(b[i]) * (2**(8 * (b.length - (i + 1))));
+    }
+    return number;
+}
 
+contract ContainerProxyFactory is Ownable {
     address private _beacon;
 
     constructor(address beacon_) {
-        _counterFactory = new FrameCounterFactory();
         _beacon = beacon_;
     }
 
@@ -22,9 +27,6 @@ contract ContainerProxyFactory is Ownable {
             67,
             _msgSender()
         );
-        _counterFactory.createCounter(address(container), 67);
-        container.setCounter(address(_counterFactory));
-
         return address(container);
     }
 }
@@ -34,9 +36,9 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
 
     ContainerManager private _containerManager;
 
-    FrameCounterFactory public _counterFactory;
+    bool private isNewContainer;
 
-    mapping(uint8 => uint256) private _eachGradeAmount;
+    // mapping(uint8 => uint256) private _eachGradeAmount;
 
     event Fallback(address indexed container, uint256 number);
 
@@ -47,7 +49,7 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
     ) MinimalBeaconProxy(beacon) {
         zombieAmount = zombieAmount_;
         _containerManager = ContainerManager(containerManager_);
-        _initEachGradeAmountMapping();
+        // _initEachGradeAmountMapping();
     }
 
     modifier onlyManager() {
@@ -55,17 +57,13 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
         _;
     }
 
-    function getEachGradeAmount(uint8 grade) public view returns (uint256) {
-        return _eachGradeAmount[grade];
-    }
+    // function getEachGradeAmount(uint8 grade) public view returns (uint256) {
+    //     return _eachGradeAmount[grade];
+    // }
 
-    function decrementGradeAmount(uint8 gradeId) public onlyManager {
-        require(_eachGradeAmount[gradeId] > 0);
-        _eachGradeAmount[gradeId]--;
-    }
-
-    function setCounter(address counter_) public onlyOwner {
-        _counterFactory = FrameCounterFactory(counter_);
+    function decrementGradeAmount() public onlyManager {
+        require(zombieAmount > 0);
+        zombieAmount--;
     }
 
     function containerManager()
@@ -77,9 +75,9 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
         return _containerManager;
     }
 
-    function notifyCreateNewContainer() internal virtual {
+    function notifyCreateNewContainer() internal virtual returns (address) {
         ContainerManager manager = containerManager();
-        manager.receiveCreateNewContainerNotification(address(this));
+        return manager.receiveCreateNewContainerNotification(address(this));
     }
 
     function notifyToCloseContainer() internal virtual {
@@ -87,39 +85,97 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
         manager.receiveCloseContainerNotification(address(this));
     }
 
-    // function beforePurchaseFunc(string memory funcStr) internal virtual {
-    //     bytes memory funcBytes = abi.encodePacked(funcStr);
-    //     uint256 dataLen = funcBytes.length;
-    //     if (keccak256(_msgData()[:dataLen]) == keccak256(funcBytes)) {
-            
-    //     }
-    // }
+    function beforePurchaseFunc(string memory funcStr)
+        internal
+        virtual
+        returns (uint8 number, address buyer)
+    {
+        bytes memory funcBytes = abi.encodePacked(funcStr);
+        uint256 len = funcBytes.length;
 
-    // function _beforeFallback() internal virtual override {
-    //     if (_counterFactory.isMaxed(address(this))) {
-    //         notifyToCloseContainer();
-    //     } else if (
-    //         zombieAmount - _counterFactory.current(address(this)) <= 7
-    //     ) {
-    //         notifyCreateNewContainer();
-    //     } else {
-    //         beforePurchaseFunc("purchaseCard(uint8)");
-    //     }
-    // }
+        if (keccak256(_msgData()[:len]) == keccak256(funcBytes)) {
+            uint256 numberLen = _msgData().length - len - 20;
+            number = uint8(bytesToUint(_msgData()[len:len + numberLen]));
+            bytes memory buyerBytes = _msgData()[len + numberLen:];
 
-    function _initEachGradeAmountMapping() private {
-        _eachGradeAmount[0] = 25;
-        _eachGradeAmount[1] = 22;
-        _eachGradeAmount[2] = 10;
-        _eachGradeAmount[3] = 6;
-        _eachGradeAmount[4] = 4;
+            assembly {
+                buyer := mload(add(buyerBytes, 20))
+            }
+        }
     }
+    
+    // function _fallback() internal override {
+    //     _delegate(_implementation())
+    // }
+
+    function _delegate(address implementation) internal override {
+        _delegatePurchaseCard(implementation);
+    }
+
+    function _delegatePurchaseCard(address implementation) internal {
+        (uint8 number, address buyer) = beforePurchaseFunc(
+            "purchaseCard(uint8,address)"
+        );
+
+        int256 spreadAmount = int256(zombieAmount) - int8(number);
+        if (spreadAmount == 0) {
+            _callPurchaseCard(implementation, number, buyer);
+            notifyToCloseContainer();
+            console.log(0);
+        } else if (spreadAmount < 0) {
+            console.log(1);
+            _callPurchaseCard(implementation, uint8(zombieAmount), buyer);
+            notifyToCloseContainer();
+            if (number - zombieAmount > 0) {
+                address newContainer = notifyCreateNewContainer();
+                _handleSpreadAmount(newContainer, spreadAmount);
+            }
+        } else if (spreadAmount <= 7 && spreadAmount > 0 && !isNewContainer) {
+            notifyCreateNewContainer();
+            isNewContainer = true;
+            _callPurchaseCard(implementation, number, buyer);
+        } else {
+            console.log(2);
+             _callPurchaseCard(implementation, number, buyer);
+        }
+    }
+
+    function _callPurchaseCard(address implementation_, uint8 number_, address buyer_) internal {
+        (bool success, ) = implementation_.call{value: msg.value}(
+            abi.encodeWithSignature(
+                "purchaseCard(uint8,address)",
+                number_,
+                buyer_
+            )
+        );
+        require(success, "_delegate failed");
+    }
+
+    function _handleSpreadAmount(address newContainer, int256 spread_) private {
+        ContainerManager manager = containerManager();
+        uint8 number = 0;
+        for (int256 i = spread_; i < 0; i++) {
+            number++;
+        }
+        manager.beforePurchaseCard(number, newContainer);
+    }
+
+    // function _initEachGradeAmountMapping() private {
+    //     _eachGradeAmount[0] = 25;
+    //     _eachGradeAmount[1] = 22;
+    //     _eachGradeAmount[2] = 10;
+    //     _eachGradeAmount[3] = 6;
+    //     _eachGradeAmount[4] = 4;
+    // }
 }
 
 contract ContainerManager is Ownable {
     mapping(uint256 => ContainerProxy) private containerMap;
+
     ContainerProxy[] private _containers;
     ContainerProxyFactory private _containerFactory;
+    FrameCounterFactory private _counterFactory;
+
     ZombieLogic private _zombieLogic;
 
     // Mapping from container address to isActive
@@ -127,6 +183,7 @@ contract ContainerManager is Ownable {
 
     constructor(address zombieLogic_, address beacon) {
         _containerFactory = new ContainerProxyFactory(beacon);
+        _counterFactory = new FrameCounterFactory();
         _zombieLogic = ZombieLogic(zombieLogic_);
         _containers = new ContainerProxy[](135);
     }
@@ -135,28 +192,38 @@ contract ContainerManager is Ownable {
         return _isActive[container];
     }
 
-    function beforePurchaseCard(uint8 number, address cotainerId) public payable {
-        // address containerAddr = address(containerMap[cotainerId]);
-        address containerAddr = cotainerId;
+    function beforePurchaseCard(uint8 number, address containerId)
+        public
+        payable
+    {
+        address containerAddr = containerId;
         require(containerAddr != address(0x0));
 
-        (bool success, ) = containerAddr.call(
-            abi.encodeWithSignature(
-                "purchaseCard(uint8)",
-                number
+        if (!_isValidContainer(containerId)) {
+            revert("container is invalid");
+        }
+
+        _incrementContainerCounter(containerId, number);
+        // console.log(_msgSender());
+
+        (bool success, ) = containerAddr.call{value: msg.value}(
+            abi.encodePacked(
+                "purchaseCard(uint8,address)",
+                number,
+                _msgSender()
             )
         );
         require(success, "purchase card not success");
     }
 
-    function getEachGradeAmount(address container, uint8 grade)
-        public
-        view
-        returns (uint256)
-    {
-        require(isActive(container));
-        return ContainerProxy(payable(container)).getEachGradeAmount(grade);
-    }
+    // function getEachGradeAmount(address container, uint8 grade)
+    //     public
+    //     view
+    //     returns (uint256)
+    // {
+    //     require(isActive(container));
+    //     return ContainerProxy(payable(container)).getEachGradeAmount(grade);
+    // }
 
     // Get active contianers at present
     function getActiveContainers()
@@ -186,11 +253,15 @@ contract ContainerManager is Ownable {
     }
 
     // Receive the notification that create new container from every container;
-    function receiveCreateNewContainerNotification(address container) public {
+    function receiveCreateNewContainerNotification(address container)
+        public
+        returns (address)
+    {
         require(isActive(container), "Container was disactive");
-        _createNewContainer();
+        return _createNewContainer();
     }
 
+    // Receive the notification that create close a container from every container;
     function receiveCloseContainerNotification(address container) public {
         require(isActive(container), "Container was closed");
 
@@ -202,12 +273,6 @@ contract ContainerManager is Ownable {
         require(success);
     }
 
-    function decrementGradeAmount(address container, uint8 grade) public {
-        require(isActive(container));
-        console.log(container, grade);
-        ContainerProxy(payable(container)).decrementGradeAmount(grade);
-    }
-
     function receivePresaleEnded(address zombieLogic) public {
         require(address(_zombieLogic) == address(zombieLogic));
 
@@ -216,12 +281,31 @@ contract ContainerManager is Ownable {
         }
     }
 
-    function _createNewContainer() private {
+    function _createNewContainer() private returns (address) {
         require(_zombieLogic.isPreSaleEnded(), "pre-sale is not ended");
 
         address container = _containerFactory.createContainer();
         _containers.push(ContainerProxy(payable(container)));
+        _counterFactory.createCounter(container, 67);
         containerMap[_containers.length] = ContainerProxy(payable(container));
         _isActive[container] = true;
+
+        return container;
+    }
+
+    function _isValidContainer(address container_) private view returns (bool) {
+        require(_isActive[container_], "container was closed");
+
+        return !_counterFactory.isMaxed(container_);
+    }
+
+    function _incrementContainerCounter(address containerId, uint8 number)
+        private
+    {
+        ContainerProxy container = ContainerProxy(payable(containerId));
+        for (uint8 i = 0; i < number; i++) {
+            _counterFactory.increment(containerId);
+            container.decrementGradeAmount();
+        }
     }
 }

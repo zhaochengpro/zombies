@@ -1,3 +1,4 @@
+const { AbiCoder } = require("@ethersproject/abi");
 const { zeroPad } = require("@ethersproject/bytes");
 const { expect } = require("chai");
 const { utils } = require("ethers");
@@ -84,16 +85,48 @@ describe("Zombies", function () {
     await zombieLogic.setContainerManager(containerManager.address);
     await zombieLogic.setPresaleEnded(true);
     const containers = await containerManager.getActiveContainers();
-    // console.log(containers);
-    console.log("account",await zombieLogic.getContainerManager())
-    console.log("account1",zombie.address);
-    await containerManager.connect(account).beforePurchaseCard(5, containers[0], { value: utils.parseEther("10")});
-    
-    // const aAmount = await container01.connect(account).getEachGradeAmount(0);
-    // const aAmount1 = await container01.connect(account).getEachGradeAmount(1);
-    // const aAmount2 = await container01.connect(account).getEachGradeAmount(2);
-    // const aAmount3 = await container01.connect(account).getEachGradeAmount(3);
-    // const aAmount4 = await container01.connect(account).getEachGradeAmount(4);
-    // console.log(aAmount.toString(10),aAmount1.toString(10),aAmount2.toString(10),aAmount3.toString(10),aAmount4.toString(10));
+
+    const container01 = new ethers.Contract(containers[0], Container.interface.fragments, owner);
+    await containerManager.connect(account).beforePurchaseCard(5, container01.address, {value : utils.parseEther("1")})
+    const zombieAmount = await container01.zombieAmount();
+    expect(zombieAmount.toString(10)).equal("62");
+    const tokenBalance = await zombie.balanceOf(account.address);
+    expect(tokenBalance.toString(10)).equal('5');
+  })
+  it("Test new container", async () => {
+    const [owner, account] = await ethers.getSigners();
+    const Zombie = await ethers.getContractFactory("ZombieToken");
+    // console.log(Zombie)
+    const ZombieLogic = await ethers.getContractFactory("ZombieLogic");
+    const ContainerManager = await ethers.getContractFactory("ContainerManager");
+    const ZombieBeacon = await ethers.getContractFactory("ZombieBeacon");
+    const Container = await ethers.getContractFactory("ContainerProxy");
+    const zombieLogic = await ZombieLogic.deploy();
+    zombieLogic.deployed();
+    const zombie = await Zombie.deploy(zombieLogic.address);
+    zombie.deployed()
+    await zombieLogic.setZombieToken(zombie.address);
+    const zombieBeacon = await ZombieBeacon.deploy(zombieLogic.address);
+    zombieBeacon.deployed();
+    const containerManager = await ContainerManager.deploy(zombieLogic.address, zombieBeacon.address)
+    containerManager.deployed();
+    await zombieLogic.setContainerManager(containerManager.address);
+    await zombieLogic.setPresaleEnded(true);
+    const containers = await containerManager.getActiveContainers();
+    console.log(containers);
+
+    const container01 = new ethers.Contract(containers[0], Container.interface.fragments, owner);
+    for (let i = 0; i < 12; i ++) {
+      await containerManager.connect(account).beforePurchaseCard(5, container01.address, {value : utils.parseEther("1")})
+    }
+    await containerManager.connect(account).beforePurchaseCard(3, container01.address, {value : utils.parseEther("1")})
+    await containerManager.connect(account).beforePurchaseCard(1, container01.address, {value : utils.parseEther("1")})
+    await containerManager.connect(account).beforePurchaseCard(3, container01.address, {value : utils.parseEther("1")})
+    const zombieAmount = await container01.zombieAmount();
+    expect(zombieAmount.toString(10)).equal("3");
+    const tokenBalance = await zombie.balanceOf(account.address);
+    expect(tokenBalance.toString(10)).equal('64');
+    const newContainers = await containerManager.getActiveContainers();
+    console.log(newContainers);
   })
 });

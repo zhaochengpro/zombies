@@ -32,7 +32,6 @@ contract ZombieToken is ERC721 {
     }
 
     function mint(address to, uint8 level) public {
-        console.log("bb",msg.sender);
         Zombie memory newZombie = Zombie(level, "");
         uint256 currentTokenId = _tokenId.current();
         zombies[currentTokenId] = newZombie;

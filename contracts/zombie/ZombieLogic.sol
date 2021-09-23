@@ -27,7 +27,7 @@ contract ZombieLogic is Ownable {
 
     uint256 public constant _MAX_SUPPLY = 1000;
     uint256 public constant _GENERAL_ZOMBIE = 9180;
-    uint256 public currentSupply = 0;
+    uint256 public currentGeneralZombieSupply = 0;
     uint256 public presaleAmount = 820;
 
     uint256 private constant _ZOMBIEPRICE = 0.1 ether;
@@ -91,7 +91,7 @@ contract ZombieLogic is Ownable {
         require(!isPreSaleEnded(), "pre-sale is ended");
         require(msg.value >= _ZOMBIEPRICE * zombeNumber);
 
-        _mintGeneralZombies(zombeNumber, address(0x0));
+        _mintGeneralZombies(zombeNumber, _msgSender());
     }
 
     /**
@@ -100,26 +100,25 @@ contract ZombieLogic is Ownable {
         pre-sale must be not ended yet
      */
 
-    function purchaseCard(uint8 cardNumber)
+    function purchaseCard(uint8 cardNumber, address buyer)
         public
         payable
         hasZombieToken
     {
-        console.log("pur", getContainerManager());
         require(
             cardNumber == 1 || cardNumber == 3 || cardNumber == 5,
             "the card number of purchase must be 1 or 3 or 5"
         );
         require(isPreSaleEnded(), "pre-sale is not ended");
-        
+
         require(
-            currentSupply + cardNumber < _GENERAL_ZOMBIE,
+            currentGeneralZombieSupply + cardNumber < _GENERAL_ZOMBIE,
             "the remainder of zombie not enough"
         );
 
         require(msg.value >= _CARDPRICE * cardNumber, "value not enough");
 
-        // _mintGeneralZombies(cardNumber);
+        _mintGeneralZombies(cardNumber, buyer);
     }
 
     // @undo Should _msgSender() replace with winer
@@ -147,7 +146,7 @@ contract ZombieLogic is Ownable {
     /**
         @notice mint general zombie (including pre-sale zombie)
      */
-    function _mintGeneralZombies(uint256 zombieNumber_, address container)
+    function _mintGeneralZombies(uint256 zombieNumber_, address buyer_)
         private
         hasZombieToken
     {
@@ -156,7 +155,7 @@ contract ZombieLogic is Ownable {
             _mintGeneralZombiesByGrade(
                 zombieNumber_,
                 uint8(ZombieGrade.SLEVEL),
-                container
+                buyer_
             );
             presaleAmount -= zombieNumber_;
         } else {
@@ -164,32 +163,25 @@ contract ZombieLogic is Ownable {
             _mintGeneralZombiesByGrade(
                 zombieNumber_,
                 uint8(ZombieGrade.SLEVEL) + 1,
-                container
+                buyer_
             );
         }
 
-        emit BuyZombies(_msgSender(), zombieNumber_);
+        emit BuyZombies(buyer_, zombieNumber_);
     }
 
     function _mintGeneralZombiesByGrade(
         uint256 zombieNumber_,
         uint8 level_,
-        address container_
+        address buyer_
     ) private {
-        uint256 loopAmount;
         for (uint256 i = 0; i < zombieNumber_; i++) {
             uint8 randomLevel = uint8(
                 uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            block.timestamp,
-                            msg.sender,
-                            loopAmount
-                        )
-                    )
+                    keccak256(abi.encodePacked(block.timestamp, msg.sender, i))
                 ) % level_
             );
-            
+
             // if random range is A to C, it will jump DLEVEL and ELEVEL
             if (
                 level_ == uint8(ZombieGrade.SLEVEL) &&
@@ -197,27 +189,8 @@ contract ZombieLogic is Ownable {
             ) {
                 randomLevel += 2;
             }
-            
-            // by the rest amount of grade to mint zombie
-            if (container_ != address(0x0)) {
-                uint256 gradeAmount = _containerManager.getEachGradeAmount(
-                    container_,
-                    randomLevel
-                );
 
-                if (gradeAmount == 0) {
-                    i--;
-                    loopAmount++;
-                    continue;
-                }
-                
-                _containerManager.decrementGradeAmount(container_, randomLevel);
-                
-                currentSupply++;
-                
-            }
-            _zombieToken.mint(_msgSender(), randomLevel);
-            loopAmount++;
+            _zombieToken.mint(buyer_, randomLevel);
         }
     }
 
