@@ -121,8 +121,7 @@ contract ContainerProxy is MinimalBeaconProxy, Ownable {
                 _nextNewContainer = notifyCreateNewContainer();
             }
 
-            
-            (bool success, ) = address(_containerManager).call{value: 200000000000000000}(
+            (bool success, ) = address(_containerManager).call(
                 abi.encodeWithSignature(
                     "purchaseCardOnlyContainer(uint8,address,address)",
                     uint8(number - zombieAmount),
@@ -292,7 +291,7 @@ contract ContainerManager is Ownable {
         if (!_isValidContainer(container)) {
             revert("container is invalid");
         }
-        console.log(address(this), container, isActive(address(this)));
+        // console.log(address(this), container, isActive(address(this)));
         // if the sender is the owner, this requirement is not required
         require(
             isActive(_msgSender()) ||
@@ -303,6 +302,7 @@ contract ContainerManager is Ownable {
         );
 
         require(container != address(0x0));
+        console.log(number, container, buyer, msg.value);
         (bool success, ) = container.call{value: msg.value}(
             abi.encodePacked("purchaseCard(uint8,address)", number, buyer)
         );
